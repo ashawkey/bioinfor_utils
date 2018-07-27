@@ -147,3 +147,22 @@ ggtrapezoid2<-function(mat,
               )
     return(p)
 }
+
+# paint the chromosomes
+# @bed: the bedGraph file.
+# @val: string of colname contains value to be painted.
+ggchrom<-function(bed,val,font_size=18,border_color="white",low="gray",high="black"){
+    p <- ggplot(bed,
+                aes(xmin=start,xmax=end,ymin=0,ymax=1))+
+         geom_rect(aes_string(fill=val))+
+         facet_grid(.~chr,scales="free",space="free")+
+         scale_x_continuous(expand=c(0,0))+
+         theme_void()+
+         theme(strip.background=element_blank(),
+               strip.text.x=element_text(size=font_size),
+               panel.spacing=unit(0,"cm"),
+               legend.position=0,
+               panel.border=element_rect(size=1,colour=border_color))+
+         scale_fill_gradient(low=low,high=high)
+    return(p)
+}
