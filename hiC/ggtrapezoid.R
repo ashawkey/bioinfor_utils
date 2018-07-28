@@ -1,64 +1,81 @@
-# some utils for coord change ---
+# some utils ---
 
-# chrpos(string obj): chr:st,ed
-# extension: chr:st,chr:ed
 id2chrpos<-function(id, bed){
     colnames(bed)=c("chr","start","end","idx")
     return(str_c(bed[idx==id,chr],":",bed[idx==id,start],",",bed[idx==id,end]))
 }
 
+#' region defination:
+#' :                 whole genome
+#' chrX-chrY         whole chrX to chrY
+#' chrX              whole chrX
+#' chrX:aaaaa-bbbbb  chrX subregion aaaaa to bbbbb
 region2id<-function(region, bed){
     colnames(bed)=c("chr","start","end","idx")
     interval=bed[1,end]-bed[1,start]
-    Chr=str_replace(region,"(.*):(.*),(.*)","\\1")
-    Start=str_replace(region,"(.*):(.*),(.*)","\\2")
-    End=str_replace(region,"(.*):(.*),(.*)","\\3")
-    
-    if(Start==Chr & End==Chr){
-        Chr=str_sub(Chr,1,4)
-        Start=bed[chr==Chr]$start[1]
-        End=bed[chr==Chr]$end[length(bed[chr==Chr]$end)]
-        id_start=bed[chr==Chr]$idx[1]
-        id_end=bed[chr==Chr]$idx[length(bed[chr==Chr]$idx)]
+    if(region==":"){
+        Chr="genome"
+        id_start = bed$idx[1]
+        id_end = bed$idx[length(bed$idx)]
+    } else if(str_detect(region,"-")){
+        if(str_detect(region,":")){
+            Chr=str_replace(region,"(.*):(.*)-(.*)","\\1")
+            Start=as.integer(str_replace(region,"(.*):(.*)-(.*)","\\2"))
+            End=as.integer(str_replace(region,"(.*):(.*)-(.*)","\\3"))
+            tmp = bed[chr==Chr&start<=End&end>=Start]$idx
+            id_start=tmp[1]
+            id_end=tmp[length(tmp)]
+        }else{
+            Chr=region
+            Chr1=str_replace(region,"(.*)-(.*)","\\1")
+            Chr2=str_replace(region,"(.*)-(.*)","\\2")
+            id_start=bed[chr==Chr1]$idx[1]
+            id_end=bed[chr==Chr2]$idx[length(bed[chr==Chr2]$idx)]
+        }
     } else {
-        Start=as.integer(Start)
-        End=as.integer(End)
-        tmp = bed[chr==Chr&start<=End&end>=Start]$idx
-        id_start=tmp[1]
-        id_end=tmp[length(tmp)]
+        Chr=region
+        id_start = bed[chr==Chr]$idx[1]
+        id_end = bed[chr==Chr]$idx[length(bed[chr==Chr]$idx)]
     }
-    return(c(id_start,id_end,Chr,Start,End))
+    return(c(id_start,id_end,Chr))
 }
 
-# region is a chrpos string
-ggtrapezoid2<-function(mat,
+#' ggtrapezoid
+#' @mat: sparse matrix format
+#' @bed: bedGraph of genome, with id colomn matching the matrix
+#' @region: genome region defined above
+#' @dist: distance between bins to paint, -1 means use the maximum
+#' @type: ["up", "bottom", "full"], parts to paint
+#' @by: axis label stride
+#' @unit: axis label unit
+#' @transposed: whether to transpose the original matrix (eg. up to bottom)
+#' @legend_length: unit is cm
+#' @line_size: size of the lines dividing chromosomes
+#' @collision_mininal_distance: ticks with distance to the next tick closer
+#' than this threshold will be omitted.
+ggtrapezoid<-function(mat,
                        bed,
-                       region="all",
+                       region=":",
                        dist=-1,
                        type="full",
                        color="red",
-                       by=50,
+                       by=5,
+                       unit=1000000,
                        transposed=F,
+                       legend_length=2,
+                       line_size=1,
                        collision_mininal_distance=10
-                       ){
+                       )
+{
     # input transform
     colnames(bed) = c("chrx","startx","endx","idx")
-    if(region=="all"){
-        cat("[INFO] Region is set to whole genome as default.\n")
-        Chr="Genome"
-        start = bed$idx[1]
-        end = bed$idx[length(bed$idx)]
-    }else{
-        tmp = region2id(region,bed)
-        start = as.integer(tmp[1])
-        end = as.integer(tmp[2])
-        Chr = tmp[3]
-        Start = as.integer(tmp[4])
-        End = as.integer(tmp[5])
-    }
+    by=by*unit
+    tmp = region2id(region,bed)
+    Chr = tmp[3]
+    start = as.integer(tmp[1])
+    end = as.integer(tmp[2])
     # constants
     binSize=bed[1,endx]-bed[1,startx]
-    by=by*binSize
     diag_len = end - start + 1
     total_num = diag_len*diag_len
     if(dist == -1 | dist > diag_len) {
@@ -103,27 +120,29 @@ ggtrapezoid2<-function(mat,
     datapoly[is.na(val)]$val=0
 
     # log transformation
-    datapoly[,val:=log10(val+1)]
+    datapoly[,val:=log2(val+1)]
     
     # merge to create plot data
     datapoly=datapoly[abs(y)<=dist]
     if(type=="up") datapoly=datapoly[y>=0]
     else if(type=="bottum") datapoly=datapoly[y<=0]
     
-    # ggplot2
+    # select 5Mb(by*unit) ticks from bed data
     xmax=2*diag_len-1
     tmp=bed[startx%%by==0 & idx>=start & idx<=end]
-    # transformed max id of current plot
-    idmax=diag_len-1+tmp$idx[1]
+    # also add the left and right most tick
+    idmin=start+1
+    idmax=end
+    tmp=rbind(bed[idx==idmin],tmp)
     tmp=rbind(tmp,bed[idx==idmax])
     # modification to avoid ugly overlapping labels
     tmp$nxt=tmp$idx[c(2:length(tmp$idx),1)]
     tmp[,dis:=nxt-idx]
     tmp=tmp[dis<0 | dis>collision_mininal_distance]
     # transformation from idx to real x coordinates.
-    myBreaks=2*(tmp$idx-tmp$idx[1])
-    myLabels=round(tmp$start/(binSize))
-
+    myBreaks=2*(tmp$idx-start-1)
+    myLabels=round(tmp$startx/unit)
+    myChrom=data.table(breaks=myBreaks,labels=myLabels)[labels==0]
     p=ggplot(datapoly,aes(x,y))+
         geom_polygon(aes(fill=val,group=id))+
         scale_x_continuous(position="top",
@@ -135,22 +154,31 @@ ggtrapezoid2<-function(mat,
         
         xlab(Chr)+
         ylim(min(datapoly$y),max(datapoly$y))+
-        scale_fill_gradientn(colours=c("white",color))+
+        scale_fill_gradientn(colours=c("black","yellow","orange","red","darkred"))+
         coord_fixed(ratio=1)+
         theme(panel.grid=element_blank(),
               panel.background=element_blank(),
               axis.text.y=element_blank(),
               axis.title.y=element_blank(),
               axis.ticks.y=element_blank(),
-              axis.line.x = element_line(size=0.7,lineend="round"),
-              axis.ticks.length=unit(.25,'cm')
+              axis.line.x = element_line(size=0.7),
+              axis.ticks.length=unit(.25,'cm'),
+              legend.key.height=unit(legend_length,"cm"),
+              legend.title=element_blank()
               )
+
+    # add chromosome border, if any.
+    for(i in 1:nrow(myChrom)){
+        p=p+geom_abline(color="white",size=line_size,slope=1,intercept=-myChrom[i,breaks])
+        p=p+geom_abline(color="white",size=line_size,slope=-1,intercept=myChrom[i,breaks])
+    }
+    
     return(p)
 }
 
-# paint the chromosomes
-# @bed: the bedGraph file.
-# @val: string of colname contains value to be painted.
+#' paint the chromosomes
+#' @bed the bedGraph file.
+#' @val string of colname contains value to be painted.
 ggchrom<-function(bed,val,font_size=18,border_color="white",low="gray",high="black"){
     p <- ggplot(bed,
                 aes(xmin=start,xmax=end,ymin=0,ymax=1))+
