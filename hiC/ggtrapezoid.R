@@ -58,7 +58,6 @@ ggtrapezoid<-function(mat,
                        region=":",
                        dist=-1,
                        type="full",
-                       color="red",
                        by=5,
                        unit=1000000,
                        transposed=F,
@@ -125,13 +124,13 @@ ggtrapezoid<-function(mat,
     # merge to create plot data
     datapoly=datapoly[abs(y)<=dist]
     if(type=="up") datapoly=datapoly[y>=0]
-    else if(type=="bottum") datapoly=datapoly[y<=0]
+    else if(type=="bottom") datapoly=datapoly[y<=0]
     
     # select 5Mb(by*unit) ticks from bed data
-    xmax=2*diag_len-1
+    xmax=2*diag_len
     tmp=bed[startx%%by==0 & idx>=start & idx<=end]
     # also add the left and right most tick
-    idmin=start+1
+    idmin=start
     idmax=end
     tmp=rbind(bed[idx==idmin],tmp)
     tmp=rbind(tmp,bed[idx==idmax])
@@ -140,11 +139,12 @@ ggtrapezoid<-function(mat,
     tmp[,dis:=nxt-idx]
     tmp=tmp[dis<0 | dis>collision_mininal_distance]
     # transformation from idx to real x coordinates.
-    myBreaks=2*(tmp$idx-start-1)
-    myLabels=round(tmp$startx/unit)
+    myBreaks=2*(tmp$idx-start)
+    myLabels=round(tmp$startx/unit,digits=1)
     myChrom=data.table(breaks=myBreaks,labels=myLabels)[labels==0]
+    # ggplot2
     p=ggplot(datapoly,aes(x,y))+
-        geom_polygon(aes(fill=val,group=id))+
+        geom_polygon(aes(fill=val,colour=val,group=id))+
         scale_x_continuous(position="top",
                            limits=c(0,xmax),
                            expand=c(0,0),
@@ -168,9 +168,11 @@ ggtrapezoid<-function(mat,
               )
 
     # add chromosome border, if any.
-    for(i in 1:nrow(myChrom)){
-        p=p+geom_abline(color="white",size=line_size,slope=1,intercept=-myChrom[i,breaks])
-        p=p+geom_abline(color="white",size=line_size,slope=-1,intercept=myChrom[i,breaks])
+    if(nrow(myChrom)!=0){
+        for(i in 1:nrow(myChrom)){
+            p=p+geom_abline(color="white",size=line_size,slope=1,intercept=-myChrom[i,breaks])
+            p=p+geom_abline(color="white",size=line_size,slope=-1,intercept=myChrom[i,breaks])
+        }
     }
     
     return(p)
