@@ -1,6 +1,4 @@
 /* * * * * * * * * * * * * * * * * * * * * * * * * *
- * Author: Tang Jiaxiang
- * 2018.7.21
  * Used for calculation of HiC resolution.
  * Please change the 'total' variable to targeted genome size.
  * (default is Arabidopsis thaliana)
